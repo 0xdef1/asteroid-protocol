@@ -1,6 +1,9 @@
 package metaprotocol
 
 import (
+	"crypto/ed25519"
+	"crypto/x509"
+	b64 "encoding/base64"
 	"fmt"
 	"log"
 	"math"
@@ -15,53 +18,49 @@ import (
 )
 
 type BridgeConfig struct {
-	S3Endpoint string `envconfig:"S3_ENDPOINT" required:"true"`
-	S3Region   string `envconfig:"S3_REGION" required:"true"`
-	S3Bucket   string `envconfig:"S3_BUCKET"`
-	S3ID       string `envconfig:"S3_ID" required:"true"`
-	S3Secret   string `envconfig:"S3_SECRET" required:"true"`
-	S3Token    string `envconfig:"S3_TOKEN"`
+	BridgePrivateKey string `envconfig:"BRIDGE_PRIVATE_KEY" required:"true"`
+	BridgePublicKey  string `envconfig:"BRIDGE_PUBLIC_KEY" required:"true"`
 }
 
 type Bridge struct {
-	chainID    string
-	db         *gorm.DB
-	s3Endpoint string
-	s3Region   string
-	s3Bucket   string
-	// s3ID is the S3 credentials ID
-	s3ID string
-	// s3Secret is the S3 credentials secret
-	s3Secret string
-	// s3Token is the S3 credentials token
-	s3Token string
-	// Define protocol rules
-	// nameMinLength          int
-	// nameMaxLength          int
-	// tickerMinLength        int
-	// tickerMaxLength        int
-	// decimalsMaxValue       uint
-	// maxSupplyMaxValue      uint64
-	// perWalletLimitMaxValue uint64
+	chainID string
+	db      *gorm.DB
+	privKey ed25519.PrivateKey
+	pubKey  ed25519.PublicKey
 }
 
 func NewBridgeProcessor(chainID string, db *gorm.DB) *Bridge {
 	// Parse config environment variables for self
-	var config InscriptionConfig
+	var config BridgeConfig
 	err := envconfig.Process("", &config)
 	if err != nil {
 		log.Fatalf("Unable to process config: %s", err)
 	}
 
+	privKeyDer, err := b64.StdEncoding.DecodeString(config.BridgePrivateKey)
+	if err != nil {
+		log.Fatalf("Unable to parse private key: %s", err)
+	}
+	pubKeyDer, err := b64.StdEncoding.DecodeString(config.BridgePublicKey)
+	if err != nil {
+		log.Fatalf("Unable to parse public key: %s", err)
+	}
+
+	privKey, err := x509.ParsePKCS8PrivateKey(privKeyDer)
+	if err != nil {
+		log.Fatalf("Unable to parse public key: %s", err)
+	}
+
+	pubKey, err := x509.ParsePKIXPublicKey(pubKeyDer)
+	if err != nil {
+		log.Fatalf("Unable to parse public key: %s", err)
+	}
+
 	return &Bridge{
-		chainID:    chainID,
-		db:         db,
-		s3Endpoint: config.S3Endpoint,
-		s3Region:   config.S3Region,
-		s3Bucket:   config.S3Bucket,
-		s3ID:       config.S3ID,
-		s3Secret:   config.S3Secret,
-		s3Token:    config.S3Token,
+		chainID: chainID,
+		db:      db,
+		privKey: privKey.(ed25519.PrivateKey),
+		pubKey:  pubKey.(ed25519.PublicKey),
 	}
 }
 
@@ -126,7 +125,7 @@ func (protocol *Bridge) Process(transactionModel models.Transaction, protocolURN
 			return fmt.Errorf("sender does not have enough tokens to sell")
 		}
 
-		// At this point we know that the sender has enough tokens to sell
+		// At this point we know that the sender has enough tokens to send
 		// so update the sender's balance
 		holderModel.Amount = holderModel.Amount - uint64(amount)
 		result = protocol.db.Save(&holderModel)
@@ -142,7 +141,7 @@ func (protocol *Bridge) Process(transactionModel models.Transaction, protocolURN
 			TokenID:       tokenModel.ID,
 			Sender:        sender,
 			Receiver:      destinationAddress,
-			Action:        "transfer",
+			Action:        "bridge",
 			Amount:        uint64(math.Round(amount)),
 			DateCreated:   transactionModel.DateCreated,
 		}
@@ -151,9 +150,9 @@ func (protocol *Bridge) Process(transactionModel models.Transaction, protocolURN
 			return result.Error
 		}
 
-		// TODO: create signature last, after other state is updated.
-		// A signature is spendable!
-		signature := "temporary signature placeholder"
+		// Note: A signature is spendable! Create and store it last.
+		attestation := []byte(parsedURN.ChainID + transactionModel.Hash + tokenModel.Ticker + amountString + bridgeContract + receiverAddress)
+		signature := b64.StdEncoding.EncodeToString(ed25519.Sign(protocol.privKey, attestation))
 
 		bridgeHistory := models.BridgeHistory{
 			ChainID:        parsedURN.ChainID,
