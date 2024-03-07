@@ -75,6 +75,7 @@ func New(
 	metaprotocols["inscription"] = metaprotocol.NewInscriptionProcessor(config.ChainID, db)
 	metaprotocols["cft20"] = metaprotocol.NewCFT20Processor(config.ChainID, db)
 	metaprotocols["marketplace"] = metaprotocol.NewMarketplaceProcessor(config.ChainID, db)
+	metaprotocols["bridge"] = metaprotocol.NewBridgeProcessor(config.ChainID, db)
 
 	return &Indexer{
 		chainID:                  config.ChainID,

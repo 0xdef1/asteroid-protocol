@@ -8,6 +8,7 @@ import { CFT20Operations } from './operations/cft20.js'
 import { InscriptionOperations } from './operations/inscription.js'
 import { MarketplaceOperations } from './operations/marketplace.js'
 import { MetaOperations } from './operations/meta.js'
+import { BridgeOperations } from './operations/bridge.js'
 
 export function setupCommand(command?: Command) {
   if (!command) {
@@ -30,6 +31,7 @@ program.name('asteroid').version('0.1.0')
 const inscriptionCommand = program.command('inscription')
 const cft20Command = program.command('cft20')
 const marketplaceCommand = program.command('marketplace')
+const bridgeCommand = program.command('bridge')
 
 async function action(
   options: Options,
@@ -103,6 +105,22 @@ async function marketplaceAction(
       context.network.chainId,
       context.account.address,
       context.api,
+    )
+    return fn(context, operations)
+  })
+}
+
+async function bridgeAction(
+  options: Options,
+  fn: (
+    context: Context,
+    operations: BridgeOperations,
+  ) => Promise<TxData | void>,
+) {
+  return action(options, (context) => {
+    const operations = new BridgeOperations(
+      context.network.chainId,
+      context.account.address
     )
     return fn(context, operations)
   })
@@ -345,6 +363,35 @@ setupCommand(marketplaceCommand.command('delist'))
   .action(async (options: MarketplaceHashOptions) => {
     marketplaceAction(options, async (context, operations) => {
       return operations.delist(options.hash)
+    })
+  })
+
+interface BridgeOptions extends Options {
+    ticker: string
+    amount: string
+    receiver: string
+    destination: string
+}
+
+setupCommand(bridgeCommand.command('send'))
+  .description('Send tokens to another chain via a bridge')
+  .requiredOption('-t, --ticker <TICKER>', 'The token ticker')
+  .requiredOption('-m, --amount <AMOUNT>', 'The amount to transfer')
+  .requiredOption('-r, --receiver <RECEIVER>',
+    'The intended recipient on the target chain')
+  .requiredOption(
+    '-d, --destination <DESTINATION>',
+    'The address of the bridge on the destination chain',
+  )
+
+  .action(async (options: BridgeOptions) => {
+    bridgeAction(options, async (context, operations) => {
+      return operations.send(
+        options.ticker,
+        parseInt(options.amount, 10),
+        options.receiver,
+        options.destination,
+      )
     })
   })
 
