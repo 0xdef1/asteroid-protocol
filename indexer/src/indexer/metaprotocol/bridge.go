@@ -119,8 +119,8 @@ func (protocol *Bridge) Process(transactionModel models.Transaction, protocolURN
 		receiverAddress := strings.TrimSpace(parsedURN.KeyValuePairs["dst"])
 		// TODO: Check if receiver address is valid
 
+		// Parse amount from URN
 		amountString := strings.TrimSpace(parsedURN.KeyValuePairs["amt"])
-		// Convert amount to have the correct number of decimals
 		amount, err := strconv.ParseFloat(amountString, 64)
 		if err != nil {
 			return fmt.Errorf("unable to parse amount '%s'", err)
@@ -128,6 +128,9 @@ func (protocol *Bridge) Process(transactionModel models.Transaction, protocolURN
 		if amount <= 0 {
 			return fmt.Errorf("amount must be greater than 0")
 		}
+
+		// Convert amount from decimal to unsigned int using the token's decimals value
+		amount = amount * math.Pow10(int(tokenModel.Decimals))
 
 		// TODO: factor this transfer logic out into the CFT20 metaprotocol
 		// Check that the user has enough tokens to send
@@ -167,7 +170,8 @@ func (protocol *Bridge) Process(transactionModel models.Transaction, protocolURN
 		}
 
 		// Note: A signature is spendable! Create and store it last.
-		attestation := []byte(parsedURN.ChainID + transactionModel.Hash + tokenModel.Ticker + amountString + remoteChainId + remoteContract + receiverAddress)
+		// Sign raw uint value to make it easier for the smart contract
+		attestation := []byte(parsedURN.ChainID + transactionModel.Hash + tokenModel.Ticker + fmt.Sprintf("%d", uint64(math.Round(amount))) + remoteChainId + remoteContract + receiverAddress)
 		signature := b64.StdEncoding.EncodeToString(ed25519.Sign(protocol.privKey, attestation))
 
 		// Record the bridge operation
