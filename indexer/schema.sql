@@ -353,3 +353,65 @@ CREATE TABLE public.marketplace_cft20_trade_history (
     CONSTRAINT marketplace_cft20_history_tk_fk FOREIGN KEY (token_id) REFERENCES public."token"(id),
     CONSTRAINT marketplace_cft20_history_tx_fk FOREIGN KEY (transaction_id) REFERENCES public."transaction"(id)
 );
+
+
+-- public.bridge_history definition
+
+-- Drop table
+
+-- DROP TABLE public.bridge_history;
+
+CREATE TABLE public.bridge_history (
+    id serial4 NOT NULL,
+    chain_id varchar(32) NOT NULL,
+    height int4 NOT NULL,
+    transaction_id int4 NOT NULL,
+    token_id int4 NOT NULL,
+    sender varchar(128) NOT NULL,
+    "action" varchar(32) NOT NULL,
+    amount int8 NOT NULL,
+    remote_chain_id varchar(32) NOT NULL,
+    remote_contract varchar(128) NOT NULL,
+    receiver varchar(128) NOT NULL,
+    "signature" varchar(256) NOT NULL,
+    date_created timestamp NOT NULL,
+    CONSTRAINT bridge_history_pkey PRIMARY KEY (id),
+    CONSTRAINT bridge_history_tk_id_fk FOREIGN KEY (token_id) REFERENCES public."token"(id),
+    CONSTRAINT bridge_history_tx_id_fk FOREIGN KEY (transaction_id) REFERENCES public."transaction"(id)
+);
+
+-- public.bridge_remote_chain definition
+
+-- Drop Table
+
+-- Drop Table public.bridge_remote_chain;
+
+CREATE TABLE public.bridge_remote_chain (
+    id serial4 NOT NULL, 
+    chain_id varchar(32) NOT NULL, 
+    remote_chain_id varchar(32) NOT NULL, 
+    remote_contract varchar(128) NOT NULL, 
+    ibc_channel varchar(32) NOT NULL, 
+    date_created timestamp NOT NULL, 
+    date_modified timestamp NOT NULL, 
+    CONSTRAINT bridge_remote_chain_id PRIMARY KEY (id)
+);
+
+
+-- public.bridge_token definition
+
+-- Drop Table
+
+-- DROP TABLE public.bridge_token;
+
+CREATE TABLE public.bridge_token (
+    id serial4 NOT NULL,
+    remote_chain_id int4 NOT NULL,
+    token_id int4 NOT NULL,
+    "enabled" boolean NOT NULL,
+    date_created timestamp NOT NULL,
+    date_modified timestamp NOT NULL, 
+    CONSTRAINT bridge_token_id PRIMARY KEY ("id"),
+    CONSTRAINT bridge_token_remote_chain_id_fkey FOREIGN KEY (remote_chain_id) REFERENCES public.bridge_remote_chain (id),
+    CONSTRAINT bridge_token_token_id_fkey FOREIGN KEY (token_id) REFERENCES public.token (id)
+);
