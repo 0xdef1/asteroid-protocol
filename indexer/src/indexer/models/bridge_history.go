@@ -11,8 +11,9 @@ type BridgeHistory struct {
 	Sender         string    `gorm:"column:sender"`
 	Action         string    `gorm:"column:action"`
 	Amount         uint64    `gorm:"column:amount"`
+	RemoteChainID  string    `gorm:"column:remote_chain_id"`
+	RemoteContract string    `gorm:"column:remote_contract"`
 	Receiver       string    `gorm:"column:receiver"`
-	BridgeContract string    `gorm:"column:bridge_contract"`
 	Signature      string    `gorm:"column:signature"`
 	DateCreated    time.Time `gorm:"column:date_created"`
 }

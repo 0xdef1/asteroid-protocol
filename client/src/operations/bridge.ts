@@ -1,7 +1,6 @@
 import BridgeProtocol from '../metaprotocol/bridge.js'
 import { OperationsBase, Options, getDefaultOptions } from './index.js'
 
-
 export class BridgeOperations<
   T extends boolean = false,
 > extends OperationsBase<T> {
@@ -20,9 +19,15 @@ export class BridgeOperations<
     this.options = options
   }
 
-  send(ticker: string, amount: number, receiver: string, destination: string, ) {
+  send(
+    ticker: string,
+    amount: number,
+    remoteChain: string,
+    remoteContract: string,
+    receiver: string,
+  ) {
     return this.prepareOperation(
-      this.protocol.send(ticker, amount, receiver, destination),
+      this.protocol.send(ticker, amount, remoteChain, remoteContract, receiver),
     )
   }
 }

@@ -4,11 +4,11 @@ import fs from 'fs/promises'
 import mime from 'mime'
 import { Context, Options, createContext } from './context.js'
 import { TxData, broadcastTx } from './metaprotocol/tx.js'
+// import { MetaOperations } from './operations/meta.js'
+import { BridgeOperations } from './operations/bridge.js'
 import { CFT20Operations } from './operations/cft20.js'
 import { InscriptionOperations } from './operations/inscription.js'
 import { MarketplaceOperations } from './operations/marketplace.js'
-import { MetaOperations } from './operations/meta.js'
-import { BridgeOperations } from './operations/bridge.js'
 
 export function setupCommand(command?: Command) {
   if (!command) {
@@ -51,18 +51,18 @@ async function action(
   }
 }
 
-async function metaAction(
-  options: Options,
-  fn: (context: Context, operations: MetaOperations) => Promise<TxData | void>,
-) {
-  return action(options, (context) => {
-    const operations = new MetaOperations(
-      context.network.chainId,
-      context.account.address,
-    )
-    return fn(context, operations)
-  })
-}
+// async function metaAction(
+//   options: Options,
+//   fn: (context: Context, operations: MetaOperations) => Promise<TxData | void>,
+// ) {
+//   return action(options, (context) => {
+//     const operations = new MetaOperations(
+//       context.network.chainId,
+//       context.account.address,
+//     )
+//     return fn(context, operations)
+//   })
+// }
 
 async function inscriptionAction(
   options: Options,
@@ -120,7 +120,7 @@ async function bridgeAction(
   return action(options, (context) => {
     const operations = new BridgeOperations(
       context.network.chainId,
-      context.account.address
+      context.account.address,
     )
     return fn(context, operations)
   })
@@ -367,21 +367,25 @@ setupCommand(marketplaceCommand.command('delist'))
   })
 
 interface BridgeOptions extends Options {
-    ticker: string
-    amount: string
-    receiver: string
-    destination: string
+  ticker: string
+  amount: string
+  remoteChain: string
+  remoteContract: string
+  destination: string
 }
 
 setupCommand(bridgeCommand.command('send'))
   .description('Send tokens to another chain via a bridge')
   .requiredOption('-t, --ticker <TICKER>', 'The token ticker')
   .requiredOption('-m, --amount <AMOUNT>', 'The amount to transfer')
-  .requiredOption('-r, --receiver <RECEIVER>',
-    'The intended recipient on the target chain')
+  .requiredOption('-c, --remoteChain <CHAINID>', 'The destination chain ID')
+  .requiredOption(
+    '-o, --remoteContract <CHAINID>',
+    'The bridge contract address on the destination chain',
+  )
   .requiredOption(
     '-d, --destination <DESTINATION>',
-    'The address of the bridge on the destination chain',
+    'The recipient address on the destination chain',
   )
 
   .action(async (options: BridgeOptions) => {
@@ -389,7 +393,8 @@ setupCommand(bridgeCommand.command('send'))
       return operations.send(
         options.ticker,
         parseInt(options.amount, 10),
-        options.receiver,
+        options.remoteChain,
+        options.remoteContract,
         options.destination,
       )
     })
