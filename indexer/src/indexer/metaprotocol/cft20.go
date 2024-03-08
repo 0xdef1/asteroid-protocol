@@ -773,6 +773,12 @@ func (protocol *CFT20) ParseTokenData(ticker string, amountString string) (model
 
 	// Convert amount from decimal to unsigned int using the token's decimals value
 	amount := uint64(math.Round(amountFloat * math.Pow10(int(tokenModel.Decimals))))
+
+	// In case the input is less than 1 / 10 ** Decimals
+	if amount == 0 {
+		return tokenModel, 0, fmt.Errorf("amount must be greater than 0")
+	}
+
 	return tokenModel, amount, nil
 }
 
