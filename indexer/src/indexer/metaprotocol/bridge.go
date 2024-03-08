@@ -6,8 +6,6 @@ import (
 	b64 "encoding/base64"
 	"fmt"
 	"log"
-	"math"
-	"strconv"
 	"strings"
 
 	"github.com/donovansolms/cosmos-inscriptions/indexer/src/indexer/models"
@@ -27,9 +25,10 @@ type Bridge struct {
 	db      *gorm.DB
 	privKey ed25519.PrivateKey
 	pubKey  ed25519.PublicKey
+	cft20   *CFT20
 }
 
-func NewBridgeProcessor(chainID string, db *gorm.DB) *Bridge {
+func NewBridgeProcessor(chainID string, db *gorm.DB, cft20 *CFT20) *Bridge {
 	// Parse config environment variables for self
 	var config BridgeConfig
 	err := envconfig.Process("", &config)
@@ -61,6 +60,7 @@ func NewBridgeProcessor(chainID string, db *gorm.DB) *Bridge {
 		db:      db,
 		privKey: privKey.(ed25519.PrivateKey),
 		pubKey:  pubKey.(ed25519.PublicKey),
+		cft20:   cft20,
 	}
 }
 
@@ -84,27 +84,31 @@ func (protocol *Bridge) Process(transactionModel models.Transaction, protocolURN
 	}
 	switch parsedURN.Operation {
 	case "send":
+
+		// Parse data from URN
 		ticker := strings.TrimSpace(parsedURN.KeyValuePairs["tic"])
 		ticker = strings.ToUpper(ticker)
+		amountString := strings.TrimSpace(parsedURN.KeyValuePairs["amt"])
+		receiverAddress := strings.TrimSpace(parsedURN.KeyValuePairs["dst"])
+		remoteChainId := strings.TrimSpace(parsedURN.KeyValuePairs["rch"])
+		remoteContract := strings.TrimSpace(parsedURN.KeyValuePairs["rco"])
 
-		// Check if the ticker exists
-		var tokenModel models.Token
-		result := protocol.db.Where("chain_id = ? AND ticker = ?", parsedURN.ChainID, ticker).First(&tokenModel)
-		if result.Error != nil {
-			return fmt.Errorf("token with ticker '%s' doesn't exist", ticker)
+		// TODO: Check if receiver address is valid
+
+		tokenModel, amount, err := protocol.cft20.ParseTokenData(ticker, amountString)
+		if err != nil {
+			return err
 		}
 
 		// Check if we know about the remote chain
-		remoteChainId := strings.TrimSpace(parsedURN.KeyValuePairs["rch"])
 		var remoteChainModel models.BridgeRemoteChain
-		result = protocol.db.Where("chain_id = ? AND remote_chain_id = ?", parsedURN.ChainID, remoteChainId).First(&remoteChainModel)
+		result := protocol.db.Where("chain_id = ? AND remote_chain_id = ?", parsedURN.ChainID, remoteChainId).First(&remoteChainModel)
 		if result.Error != nil {
 			return fmt.Errorf("remote chain '%s' doesn't exist", remoteChainId)
 		}
 
 		// Check that the remote contract matches what we expect
 		// TODO: Do we actually need the remote contract address in the memo and signature or can we just get it from the DB?
-		remoteContract := strings.TrimSpace(parsedURN.KeyValuePairs["rco"])
 		if remoteChainModel.RemoteContract != remoteContract {
 			return fmt.Errorf("incorrect remote contract for chain '%s'", remoteChainId)
 		}
@@ -116,62 +120,12 @@ func (protocol *Bridge) Process(transactionModel models.Transaction, protocolURN
 			return fmt.Errorf("token %s not enabled for bridging to %s", ticker, remoteChainId)
 		}
 
-		receiverAddress := strings.TrimSpace(parsedURN.KeyValuePairs["dst"])
-		// TODO: Check if receiver address is valid
-
-		// Parse amount from URN
-		amountString := strings.TrimSpace(parsedURN.KeyValuePairs["amt"])
-		amount, err := strconv.ParseFloat(amountString, 64)
-		if err != nil {
-			return fmt.Errorf("unable to parse amount '%s'", err)
-		}
-		if amount <= 0 {
-			return fmt.Errorf("amount must be greater than 0")
-		}
-
-		// Convert amount from decimal to unsigned int using the token's decimals value
-		amount = amount * math.Pow10(int(tokenModel.Decimals))
-
-		// TODO: factor this transfer logic out into the CFT20 metaprotocol
-		// Check that the user has enough tokens to send
-		var holderModel models.TokenHolder
-		result = protocol.db.Where("chain_id = ? AND token_id = ? AND address = ?", parsedURN.ChainID, tokenModel.ID, sender).First(&holderModel)
-		if result.Error != nil {
-			return fmt.Errorf("sender does not have any tokens to sell")
-		}
-
-		if holderModel.Amount < uint64(amount) {
-			return fmt.Errorf("sender does not have enough tokens to sell")
-		}
-
-		// At this point we know that the sender has enough tokens to send
-		// so update the sender's balance
-		holderModel.Amount = holderModel.Amount - uint64(amount)
-		result = protocol.db.Save(&holderModel)
-		if result.Error != nil {
-			return fmt.Errorf("unable to update seller's balance '%s'", err)
-		}
-
-		// Record the transfer
-		historyModel := models.TokenAddressHistory{
-			ChainID:       parsedURN.ChainID,
-			Height:        transactionModel.Height,
-			TransactionID: transactionModel.ID,
-			TokenID:       tokenModel.ID,
-			Sender:        sender,
-			Receiver:      "bridge",
-			Action:        "bridge",
-			Amount:        uint64(math.Round(amount)),
-			DateCreated:   transactionModel.DateCreated,
-		}
-		result = protocol.db.Save(&historyModel)
-		if result.Error != nil {
-			return result.Error
-		}
+		// Perform the transfer to the virtual bridge address (modifies state)
+		protocol.cft20.Transfer(transactionModel, sender, "bridge", tokenModel, amount, "bridge", CFT20TransferOptions{ToVirtual: true})
 
 		// Note: A signature is spendable! Create and store it last.
 		// Sign raw uint value to make it easier for the smart contract
-		attestation := []byte(parsedURN.ChainID + transactionModel.Hash + tokenModel.Ticker + fmt.Sprintf("%d", uint64(math.Round(amount))) + remoteChainId + remoteContract + receiverAddress)
+		attestation := []byte(parsedURN.ChainID + transactionModel.Hash + tokenModel.Ticker + fmt.Sprintf("%d", amount) + remoteChainId + remoteContract + receiverAddress)
 		signature := b64.StdEncoding.EncodeToString(ed25519.Sign(protocol.privKey, attestation))
 
 		// Record the bridge operation
@@ -182,7 +136,7 @@ func (protocol *Bridge) Process(transactionModel models.Transaction, protocolURN
 			TokenID:        tokenModel.ID,
 			Sender:         sender,
 			Action:         "send",
-			Amount:         uint64(math.Round(amount)),
+			Amount:         amount,
 			RemoteChainID:  remoteChainId,
 			RemoteContract: remoteContract,
 			Receiver:       receiverAddress,
