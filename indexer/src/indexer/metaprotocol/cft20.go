@@ -801,11 +801,11 @@ func (protocol *CFT20) Transfer(transactionModel models.Transaction, from string
 		var holderModel models.TokenHolder
 		result := protocol.db.Where("chain_id = ? AND token_id = ? AND address = ?", protocol.chainID, tokenModel.ID, from).First(&holderModel)
 		if result.Error != nil {
-			return fmt.Errorf("sender does not have any tokens to sell")
+			return fmt.Errorf("sender does not have any tokens to send")
 		}
 
 		if holderModel.Amount < amount {
-			return fmt.Errorf("sender does not have enough tokens to sell")
+			return fmt.Errorf("sender does not have enough tokens to send")
 		}
 
 		// At this point we know that the sender has enough tokens to send

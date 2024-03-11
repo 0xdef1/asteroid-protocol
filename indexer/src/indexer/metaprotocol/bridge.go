@@ -84,7 +84,6 @@ func (protocol *Bridge) Process(transactionModel models.Transaction, protocolURN
 	}
 	switch parsedURN.Operation {
 	case "send":
-
 		// Parse data from URN
 		ticker := strings.TrimSpace(parsedURN.KeyValuePairs["tic"])
 		ticker = strings.ToUpper(ticker)
@@ -94,11 +93,6 @@ func (protocol *Bridge) Process(transactionModel models.Transaction, protocolURN
 		remoteContract := strings.TrimSpace(parsedURN.KeyValuePairs["rco"])
 
 		// TODO: Check if receiver address is valid
-
-		tokenModel, amount, err := protocol.cft20.ParseTokenData(ticker, amountString)
-		if err != nil {
-			return err
-		}
 
 		// Check if we know about the remote chain
 		var remoteChainModel models.BridgeRemoteChain
@@ -113,6 +107,11 @@ func (protocol *Bridge) Process(transactionModel models.Transaction, protocolURN
 			return fmt.Errorf("incorrect remote contract for chain '%s'", remoteChainId)
 		}
 
+		tokenModel, amount, err := protocol.cft20.ParseTokenData(ticker, amountString)
+		if err != nil {
+			return err
+		}
+
 		// Check if this token has been enabled for bridging
 		var bridgeTokenModel models.BridgeToken
 		result = protocol.db.Where("remote_chain_id = ? AND token_id = ?", remoteChainModel.ID, tokenModel.ID).First(&bridgeTokenModel)
@@ -121,10 +120,12 @@ func (protocol *Bridge) Process(transactionModel models.Transaction, protocolURN
 		}
 
 		// Perform the transfer to the virtual bridge address (modifies state)
-		protocol.cft20.Transfer(transactionModel, sender, "bridge", tokenModel, amount, "bridge", CFT20TransferOptions{ToVirtual: true})
+		err = protocol.cft20.Transfer(transactionModel, sender, "bridge", tokenModel, amount, "bridge", CFT20TransferOptions{ToVirtual: true})
+		if err != nil {
+			return err
+		}
 
 		// Note: A signature is spendable! Create and store it last.
-		// Sign raw uint value to make it easier for the smart contract
 		attestation := []byte(parsedURN.ChainID + transactionModel.Hash + tokenModel.Ticker + fmt.Sprintf("%d", amount) + remoteChainId + remoteContract + receiverAddress)
 		signature := b64.StdEncoding.EncodeToString(ed25519.Sign(protocol.privKey, attestation))
 
@@ -141,6 +142,63 @@ func (protocol *Bridge) Process(transactionModel models.Transaction, protocolURN
 			RemoteContract: remoteContract,
 			Receiver:       receiverAddress,
 			Signature:      signature,
+			DateCreated:    transactionModel.DateCreated,
+		}
+		result = protocol.db.Save(&bridgeHistory)
+		if result.Error != nil {
+			return result.Error
+		}
+	case "recv":
+		// Parse data from URN
+		ticker := strings.TrimSpace(parsedURN.KeyValuePairs["tic"])
+		ticker = strings.ToUpper(ticker)
+		amountString := strings.TrimSpace(parsedURN.KeyValuePairs["amt"])
+		receiverAddress := strings.TrimSpace(parsedURN.KeyValuePairs["dst"])
+		remoteChainId := strings.TrimSpace(parsedURN.KeyValuePairs["rch"])
+		remoteSenderAddress := strings.TrimSpace(parsedURN.KeyValuePairs["src"])
+
+		// TODO: Check if receiverAddress is valid
+		// TODO: Check if remoteSenderAddress is valid
+
+		var remoteChainModel models.BridgeRemoteChain
+		result := protocol.db.Where("chain_id = ? AND remote_chain_id = ?", protocol.chainID, remoteChainId).First(&remoteChainModel)
+		if result.Error != nil {
+			return fmt.Errorf("remote chain '%s' doesn't exist", remoteChainId)
+		}
+
+		// TODO: Check that the originating address matches remoteChainModel.RemoteContract
+		// TODO: Check that the tx came through remoteChainModel.IBCChannel
+
+		tokenModel, amount, err := protocol.cft20.ParseTokenData(ticker, amountString)
+		if err != nil {
+			return err
+		}
+
+		// Check that token is enabled for bridging
+		var bridgeTokenModel models.BridgeToken
+		result = protocol.db.Where("remote_chain_id = ? AND token_id = ?", remoteChainModel.ID, tokenModel.ID).First(&bridgeTokenModel)
+		if result.Error != nil || !bridgeTokenModel.Enabled {
+			return fmt.Errorf("token %s not enabled for bridging to %s", ticker, remoteChainId)
+		}
+
+		// Perform the transfer from virtual bridge address (modifies state)
+		err = protocol.cft20.Transfer(transactionModel, "bridge", receiverAddress, tokenModel, amount, "bridge", CFT20TransferOptions{FromVirtual: true})
+		if err != nil {
+			return err
+		}
+
+		// Record the bridge operation (no signature needed)
+		bridgeHistory := models.BridgeHistory{
+			ChainID:        parsedURN.ChainID,
+			Height:         transactionModel.Height,
+			TransactionID:  transactionModel.ID,
+			TokenID:        tokenModel.ID,
+			Sender:         remoteSenderAddress,
+			Action:         "recv",
+			Amount:         amount,
+			RemoteChainID:  remoteChainId,
+			RemoteContract: remoteChainModel.RemoteContract,
+			Receiver:       receiverAddress,
 			DateCreated:    transactionModel.DateCreated,
 		}
 		result = protocol.db.Save(&bridgeHistory)
