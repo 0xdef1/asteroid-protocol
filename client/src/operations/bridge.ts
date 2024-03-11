@@ -30,4 +30,16 @@ export class BridgeOperations<
       this.protocol.send(ticker, amount, remoteChain, remoteContract, receiver),
     )
   }
+
+  recv(
+    ticker: string,
+    amount: number,
+    remoteChain: string,
+    remoteSender: string,
+    receiver: string,
+  ) {
+    return this.prepareOperation(
+      this.protocol.recv(ticker, amount, remoteChain, remoteSender, receiver),
+    )
+  }
 }

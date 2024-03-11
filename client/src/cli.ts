@@ -366,7 +366,7 @@ setupCommand(marketplaceCommand.command('delist'))
     })
   })
 
-interface BridgeOptions extends Options {
+interface BridgeSendOptions extends Options {
   ticker: string
   amount: string
   remoteChain: string
@@ -380,7 +380,7 @@ setupCommand(bridgeCommand.command('send'))
   .requiredOption('-m, --amount <AMOUNT>', 'The amount to transfer')
   .requiredOption('-c, --remoteChain <CHAINID>', 'The destination chain ID')
   .requiredOption(
-    '-o, --remoteContract <CHAINID>',
+    '-o, --remoteContract <CONTRACT>',
     'The bridge contract address on the destination chain',
   )
   .requiredOption(
@@ -388,11 +388,11 @@ setupCommand(bridgeCommand.command('send'))
     'The recipient address on the destination chain',
   )
 
-  .action(async (options: BridgeOptions) => {
+  .action(async (options: BridgeSendOptions) => {
     bridgeAction(options, async (context, operations) => {
       return operations.send(
         options.ticker,
-        parseInt(options.amount, 10),
+        parseFloat(options.amount),
         options.remoteChain,
         options.remoteContract,
         options.destination,
@@ -400,4 +400,37 @@ setupCommand(bridgeCommand.command('send'))
     })
   })
 
+interface BridgeRecvOptions extends Options {
+  ticker: string
+  amount: string
+  remoteChain: string
+  remoteSender: string
+  destination: string
+}
+
+setupCommand(bridgeCommand.command('recv'))
+  .description('Send tokens to another chain via a bridge')
+  .requiredOption('-t, --ticker <TICKER>', 'The token ticker')
+  .requiredOption('-m, --amount <AMOUNT>', 'The amount to transfer')
+  .requiredOption('-c, --remoteChain <CHAINID>', 'The destination chain ID')
+  .requiredOption(
+    '-s, --remoteSender <SENDER>',
+    'The bridge contract address on the destination chain',
+  )
+  .requiredOption(
+    '-d, --destination <DESTINATION>',
+    'The recipient address on the destination chain',
+  )
+
+  .action(async (options: BridgeRecvOptions) => {
+    bridgeAction(options, async (context, operations) => {
+      return operations.recv(
+        options.ticker,
+        parseFloat(options.amount),
+        options.remoteChain,
+        options.remoteSender,
+        options.destination,
+      )
+    })
+  })
 program.parseAsync()

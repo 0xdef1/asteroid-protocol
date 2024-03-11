@@ -36,4 +36,21 @@ export default class BridgeProtocol extends BaseProtocol {
     ]
     return buildOperation(this, this.fee, this.chainId, 'send', params)
   }
+
+  recv(
+    ticker: string,
+    amount: number,
+    remoteChain: string,
+    remoteSender: string,
+    receiver: string,
+  ) {
+    const params: MetaProtocolParams = [
+      ['tic', ticker],
+      ['amt', amount],
+      ['rch', remoteChain],
+      ['src', remoteSender],
+      ['dst', receiver],
+    ]
+    return buildOperation(this, this.fee, this.chainId, 'recv', params)
+  }
 }
