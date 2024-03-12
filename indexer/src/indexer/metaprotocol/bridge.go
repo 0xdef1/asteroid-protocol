@@ -157,9 +157,6 @@ func (protocol *Bridge) Process(transactionModel models.Transaction, protocolURN
 		remoteChainId := strings.TrimSpace(parsedURN.KeyValuePairs["rch"])
 		remoteSenderAddress := strings.TrimSpace(parsedURN.KeyValuePairs["src"])
 
-		// TODO: Check if receiverAddress is valid
-		// TODO: Check if remoteSenderAddress is valid
-
 		var remoteChainModel models.BridgeRemoteChain
 		result := protocol.db.Where("chain_id = ? AND remote_chain_id = ?", protocol.chainID, remoteChainId).First(&remoteChainModel)
 		if result.Error != nil {
@@ -168,6 +165,8 @@ func (protocol *Bridge) Process(transactionModel models.Transaction, protocolURN
 
 		// TODO: Check that the originating address matches remoteChainModel.RemoteContract
 		// TODO: Check that the tx came through remoteChainModel.IBCChannel
+		// TODO: Check if receiverAddress is valid
+		// TODO: Check if remoteSenderAddress is valid
 
 		tokenModel, amount, err := protocol.cft20.ParseTokenData(ticker, amountString)
 		if err != nil {
